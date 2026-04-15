@@ -6,31 +6,79 @@ import threading
 import requests
 import customtkinter as ctk
 
-# Configurações de Design
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config", "alvos.json")
+
+NICHOS_PADRAO = [
+    "academia", "advogado", "agencia de marketing", "arquitetura", "autoescola",
+    "barbearia", "bistro", "cafeteria", "centro automotivo", "clinica de estetica",
+    "clinica medica", "clinica odontologica", "clinica veterinaria", "construtora", "contabilidade",
+    "consultorio de psicologia", "corretora de seguros", "coworking", "dedetizadora", "despachante",
+    "escola de idiomas", "escola infantil", "escritorio de engenharia", "espaco de eventos", "estudio de pilates",
+    "estudio de tatuagem", "farmacia", "floricultura", "funeraria", "grameira",
+    "hamburgueria", "hotel", "imobiliaria", "laboratorio clinico", "lava rapido",
+    "lavanderia", "loja de calcados", "loja de informatica", "loja de moveis", "loja de roupas",
+    "loja de suplementos", "loja de tintas", "loja de veiculos", "marcenaria", "material de construcao",
+    "moto pecas", "nutricionista", "oficina mecanica", "otica", "padaria",
+    "pastelaria", "pet shop", "pizzaria", "posto de gasolina", "pousada",
+    "provedor de internet", "restaurante", "restaurante japones", "salao de beleza", "sorveteria",
+    "supermercado", "vidracaria"
+]
+
+class CheckboxScrollFrame(ctk.CTkScrollableFrame):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self.checkboxes = []
+        self.vars = {}
+
+    def populate(self, list_items, pre_selected=[]):
+        self.clear()
+        for item in list_items:
+            var = ctk.StringVar(value=item if item in pre_selected else "")
+            cb = ctk.CTkCheckBox(self, text=item, variable=var, onvalue=item, offvalue="")
+            cb.pack(anchor="w", pady=2, padx=5)
+            self.checkboxes.append(cb)
+            self.vars[item] = var
+
+    def clear(self):
+        for cb in self.checkboxes:
+            cb.destroy()
+        self.checkboxes.clear()
+        self.vars.clear()
+
+    def get_selected(self):
+        return [var.get() for var in self.vars.values() if var.get() != ""]
+
+    def select_all(self):
+        for cb, var in zip(self.checkboxes, self.vars.values()):
+            cb.select()
+            var.set(cb._onvalue)
+
+    def deselect_all(self):
+        for cb, var in zip(self.checkboxes, self.vars.values()):
+            cb.deselect()
+            var.set(cb._offvalue)
+
 
 class KyrosApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
         self.title("Kyros Leads — Central de Comando")
-        self.geometry("1000x650")
+        self.geometry("1100x700")
 
-        # Layout Grid
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # Sidebar (Menu Lateral)
+        # ---------------- SIDEBAR ----------------
         self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         
         self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="KYROS LEADS", font=ctk.CTkFont(size=22, weight="bold"))
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
-        # Botões de Abas
         self.btn_aba_console = ctk.CTkButton(self.sidebar_frame, text="💻 Painel Principal", fg_color="transparent", command=self.show_console)
         self.btn_aba_console.grid(row=1, column=0, padx=20, pady=5)
 
@@ -39,7 +87,6 @@ class KyrosApp(ctk.CTk):
 
         ctk.CTkLabel(self.sidebar_frame, text="──────────────", text_color="gray").grid(row=3, column=0, pady=5)
 
-        # Botões de Ação
         self.btn_full = ctk.CTkButton(self.sidebar_frame, text="Fluxo Completo", command=lambda: self.start_script("auto_prospect.py"))
         self.btn_full.grid(row=4, column=0, padx=20, pady=10)
 
@@ -55,7 +102,7 @@ class KyrosApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Sistema Online", text_color="green")
         self.status_label.grid(row=8, column=0, padx=20, pady=(60, 10))
 
-        # ---------------- CONSOLE FRAME (Aba 1) ----------------
+        # ---------------- CONSOLE FRAME ----------------
         self.console_frame = ctk.CTkFrame(self, corner_radius=10)
         self.console_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
         self.console_frame.grid_rowconfigure(1, weight=1)
@@ -67,47 +114,56 @@ class KyrosApp(ctk.CTk):
         self.textbox = ctk.CTkTextbox(self.console_frame, font=("Consolas", 12))
         self.textbox.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
 
-        # ---------------- CONFIG FRAME (Aba 2 - IBGE) ----------------
+        # ---------------- CONFIG FRAME ----------------
         self.config_frame = ctk.CTkFrame(self, corner_radius=10)
-        # Nao exibe no inicio...
-        self.config_frame.grid_columnconfigure((0, 1), weight=1)
+        self.config_frame.grid_columnconfigure(0, weight=1)
+        self.config_frame.grid_columnconfigure(1, weight=1)
+        self.config_frame.grid_rowconfigure(3, weight=1) # Faz as listas expandirem
         
-        ctk.CTkLabel(self.config_frame, text="Mapeamento Estratégico (IBGE API)", font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, columnspan=2, pady=(20, 20))
+        ctk.CTkLabel(self.config_frame, text="Mapeamento Estratégico em Massa", font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, columnspan=2, pady=(15, 10))
 
-        # --- Linha Cidades ---
-        self.estado_var = ctk.StringVar(value="Selecione o Estado")
-        self.cidade_var = ctk.StringVar(value="Aguardando...")
-
-        self.combo_estado = ctk.CTkOptionMenu(self.config_frame, variable=self.estado_var, command=self.carregar_cidades)
-        self.combo_estado.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
-
-        self.combo_cidade = ctk.CTkOptionMenu(self.config_frame, variable=self.cidade_var)
-        self.combo_cidade.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
-
-        self.btn_add_cidade = ctk.CTkButton(self.config_frame, text="+ Adicionar Cidade à Rota", command=self.add_cidade)
-        self.btn_add_cidade.grid(row=2, column=0, columnspan=2, pady=10)
-
-        # --- Linha Nichos ---
-        self.entry_nicho = ctk.CTkEntry(self.config_frame, placeholder_text="Digite um novo Nicho (Ex: Construtora)")
-        self.entry_nicho.grid(row=3, column=0, columnspan=2, padx=20, pady=(30,10), sticky="ew")
-
-        self.btn_add_nicho = ctk.CTkButton(self.config_frame, text="+ Adicionar Nicho", command=self.add_nicho)
-        self.btn_add_nicho.grid(row=4, column=0, columnspan=2, pady=10)
-
-        # --- Mostrador Atual ---
-        self.lbl_atuais = ctk.CTkLabel(self.config_frame, text="Alvos Atuais:", font=ctk.CTkFont(weight="bold"))
-        self.lbl_atuais.grid(row=5, column=0, columnspan=2, pady=(20,5))
+        # TOPO: Cidades do IBGE
+        top_frame = ctk.CTkFrame(self.config_frame, fg_color="transparent")
+        top_frame.grid(row=1, column=0, columnspan=2, fill="x", padx=20, pady=5)
         
-        self.txt_atuais = ctk.CTkTextbox(self.config_frame, height=150)
-        self.txt_atuais.grid(row=6, column=0, columnspan=2, padx=20, pady=5, sticky="ew")
+        self.estado_var = ctk.StringVar(value="Selecione o Estado IBGE")
+        self.combo_estado = ctk.CTkOptionMenu(top_frame, variable=self.estado_var, command=self.carregar_cidades)
+        self.combo_estado.pack(side="left", padx=(0, 10))
 
-        # Iniciar processo em Thread para nao travar a UI
+        lbl_info = ctk.CTkLabel(top_frame, text="← Selecione para listar cidades", text_color="gray")
+        lbl_info.pack(side="left")
+
+        # TITULOS DAS LISTAS
+        ctk.CTkLabel(self.config_frame, text="📍 Cidades Selecionadas (IBGE)", font=ctk.CTkFont(weight="bold")).grid(row=2, column=0, pady=(10,0))
+        ctk.CTkLabel(self.config_frame, text="🎯 Nichos do Scanner", font=ctk.CTkFont(weight="bold")).grid(row=2, column=1, pady=(10,0))
+
+        # LISTAS DE ROLAGEM COM CHECKBOXES
+        self.scroll_cidades = CheckboxScrollFrame(self.config_frame)
+        self.scroll_cidades.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
+
+        self.scroll_nichos = CheckboxScrollFrame(self.config_frame)
+        self.scroll_nichos.grid(row=3, column=1, padx=10, pady=10, sticky="nsew")
+
+        # BOTÕES DE SELEÇÃO EM MASSA
+        btn_frame_cidad = ctk.CTkFrame(self.config_frame, fg_color="transparent")
+        btn_frame_cidad.grid(row=4, column=0, pady=5)
+        ctk.CTkButton(btn_frame_cidad, text="Marcar Tudo", width=100, command=self.scroll_cidades.select_all).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame_cidad, text="Desmarcar Tudo", width=100, fg_color="#631414", hover_color="#8a1c1c", command=self.scroll_cidades.deselect_all).pack(side="left", padx=5)
+
+        btn_frame_nicho = ctk.CTkFrame(self.config_frame, fg_color="transparent")
+        btn_frame_nicho.grid(row=4, column=1, pady=5)
+        ctk.CTkButton(btn_frame_nicho, text="Marcar Tudo", width=100, command=self.scroll_nichos.select_all).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame_nicho, text="Desmarcar Tudo", width=100, fg_color="#631414", hover_color="#8a1c1c", command=self.scroll_nichos.deselect_all).pack(side="left", padx=5)
+
+        # BOTÃO SALVAR GIGANTE
+        self.btn_salvar_config = ctk.CTkButton(self.config_frame, text="✅ SALVAR TODOS OS ALVOS NO SISTEMA", font=ctk.CTkFont(weight="bold", size=14), fg_color="#0e6b26", hover_color="#148a32", height=40, command=self.salvar_alvos)
+        self.btn_salvar_config.grid(row=5, column=0, columnspan=2, padx=20, pady=(15, 20), sticky="ew")
+
+        # INIT
         self.process = None
-        
-        # Load inicial da API IBGE e Arquivo
         self.estados_api = []
+        self.load_alvos_salvos()
         threading.Thread(target=self.init_ibge, daemon=True).start()
-        self.atualizar_visor_json()
 
     # --- NAVEGAÇÃO ---
     def show_console(self):
@@ -122,79 +178,79 @@ class KyrosApp(ctk.CTk):
         self.btn_aba_config.configure(fg_color=["gray75", "gray25"])
         self.btn_aba_console.configure(fg_color="transparent")
 
-    # --- INTEGRAÇÃO IBGE ---
+    # --- JSON E LOAD INICIAL ---
+    def load_alvos_salvos(self):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                self.alvos_cidades = data.get("cidades", [])
+                self.alvos_nichos = data.get("categorias", [])
+        except:
+            self.alvos_cidades = []
+            self.alvos_nichos = []
+        
+        # Popula a lista direita (nichos padrao + nichos ja selecionados)
+        nm = sorted(list(set(NICHOS_PADRAO + self.alvos_nichos)))
+        self.scroll_nichos.populate(nm, pre_selected=self.alvos_nichos)
+        
+        # Popula a lista esquerda apenas com as cidades ja salvas de sessoes anteriores. IBGE subsituirá ao escolher o estado.
+        if self.alvos_cidades:
+            self.scroll_cidades.populate(self.alvos_cidades, pre_selected=self.alvos_cidades)
+        else:
+            self.scroll_cidades.populate(["Nenhuma cidade cadastrada ainda. Escolha um Estado acima."])
+
+    def salvar_alvos(self):
+        cids = self.scroll_cidades.get_selected()
+        nics = self.scroll_nichos.get_selected()
+        
+        # Merge cidades atuais com as novas selecionadas sem perder as de outro estado que já estavam lá (opcional, aqui mantemos só o q tá ticado).
+        # Para ser prático: As que estão ticadas na tela vão pro JSON.
+        
+        data = {
+            "cidades": cids,
+            "categorias": nics
+        }
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            
+        self.btn_salvar_config.configure(text="✅ ALVOS SALVOS COM SUCESSO!", fg_color="green")
+        self.after(2000, lambda: self.btn_salvar_config.configure(text="✅ SALVAR TODOS OS ALVOS NO SISTEMA", fg_color="#0e6b26"))
+
+    # --- API IBGE ---
     def init_ibge(self):
         try:
-            self.combo_estado.configure(values=["Carregando Estados..."])
+            self.combo_estado.configure(values=["Carregando..."])
             r = requests.get("https://servicodados.ibge.gov.br/api/v1/localidades/estados?orderBy=nome", timeout=10)
             self.estados_api = r.json()
             nomes_estados = [e["nome"] for e in self.estados_api]
             self.combo_estado.configure(values=nomes_estados)
-            self.estado_var.set("Selecione o Estado")
-        except Exception as e:
-            self.estado_var.set(f"Erro IBGE")
+            self.estado_var.set("Selecione o Estado IBGE")
+        except:
+            self.estado_var.set(f"Erro ao buscar IBGE")
 
     def carregar_cidades(self, estado_selecionado):
-        self.cidade_var.set("Carregando...")
-        self.combo_cidade.configure(values=["Buscando..."])
+        self.scroll_cidades.clear()
         
         def fetch():
             uf_id = next((e["id"] for e in self.estados_api if e["nome"] == estado_selecionado), None)
             if uf_id:
                 try:
                     r = requests.get(f"https://servicodados.ibge.gov.br/api/v1/localidades/estados/{uf_id}/municipios?orderBy=nome", timeout=10)
-                    cidades = [c["nome"] for c in r.json()]
-                    self.combo_cidade.configure(values=cidades)
-                    if cidades:
-                        self.cidade_var.set(cidades[0])
-                except:
-                    self.cidade_var.set("Erro API")
+                    cidades_ibge = [c["nome"] for c in r.json()]
+                    # Mescla se tiver cidades desse estado já marcadas
+                    pre_selec = [c for c in self.alvos_cidades if c in cidades_ibge]
+                    self.scroll_cidades.populate(cidades_ibge, pre_selected=pre_selec)
+                except Exception as e:
+                    pass
         threading.Thread(target=fetch, daemon=True).start()
 
-    # --- GERENCIAMENTO JSON ---
-    def load_json(self):
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {"cidades": [], "categorias": []}
-
-    def save_json(self, data):
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        self.atualizar_visor_json()
-
-    def add_cidade(self):
-        cid = self.cidade_var.get()
-        if cid and cid not in ["Aguardando...", "Carregando...", "Erro API"]:
-            data = self.load_json()
-            if cid not in data["cidades"]:
-                data["cidades"].append(cid)
-                self.save_json(data)
-
-    def add_nicho(self):
-        nic = self.entry_nicho.get().strip().lower()
-        if nic:
-            data = self.load_json()
-            if nic not in data["categorias"]:
-                data["categorias"].append(nic)
-                self.save_json(data)
-                self.entry_nicho.delete(0, 'end')
-
-    def atualizar_visor_json(self):
-        self.txt_atuais.delete("1.0", "end")
-        data = self.load_json()
-        texto = f"[ CIDADES MAPEADAS ]\n{', '.join(data.get('cidades', []))}\n\n"
-        texto += f"[ NICHOS VIGIADOS ]\n{', '.join(data.get('categorias', []))}"
-        self.txt_atuais.insert("end", texto)
-
-    # --- EXECUÇÃO SYSTEM ---
+    # --- EXECUÇÃO DE PYTHON ---
     def log(self, text):
         self.textbox.insert("end", text + "\n")
         self.textbox.see("end")
 
     def start_script(self, script_name):
-        self.show_console() # Abre pro console rodar
+        self.show_console()
         if self.process and self.process.poll() is None:
             self.log("Existe um processo em execucao. Aguarde.")
             return
@@ -207,13 +263,8 @@ class KyrosApp(ctk.CTk):
     def run_process(self, script_name):
         script_path = os.path.join("scripts", script_name)
         process = subprocess.Popen(
-            [sys.executable, script_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            universal_newlines=True,
-            cwd=os.getcwd()
+            [sys.executable, script_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, universal_newlines=True, cwd=os.getcwd()
         )
         for line in process.stdout:
             self.log(line.strip())
