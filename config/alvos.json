@@ -1,0 +1,32 @@
+{
+  "cidades": [
+    "Três Corações",
+    "Varginha"
+  ],
+  "categorias": [
+    "pet shop",
+    "academia",
+    "pizzaria",
+    "hamburgueria",
+    "loja de roupa feminina",
+    "imobiliaria",
+    "escola de idiomas",
+    "autoescola",
+    "clinica de estetica",
+    "estudio de tatuagem",
+    "psicologo",
+    "escritorio de contabilidade",
+    "loja de moveis",
+    "material de construcao",
+    "floricultura",
+    "otica",
+    "venda de carros",
+    "barbearia",
+    "loja de suplementos",
+    "advogado",
+    "oficina mecanica",
+    "salao de beleza",
+    "clinica odontologica",
+    "farmacia"
+  ]
+}

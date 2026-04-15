@@ -28,34 +28,17 @@ if not all([SUPABASE_URL, SUPABASE_KEY, SERPER_KEY]):
     sys.exit(1)
 
 # ── Configurações da campanha ────────────────────────────────────────────────
-CIDADES = ["Três Corações", "Varginha"]
-
-CATEGORIAS = [
-    "pet shop",
-    "academia",
-    "pizzaria",
-    "hamburgueria",
-    "loja de roupa feminina",
-    "imobiliaria",
-    "escola de idiomas",
-    "autoescola",
-    "clinica de estetica",
-    "estudio de tatuagem",
-    "psicologo",
-    "escritorio de contabilidade",
-    "loja de moveis",
-    "material de construcao",
-    "floricultura",
-    "otica",
-    "venda de carros",
-    "barbearia",
-    "loja de suplementos",
-    "advogado",
-    "oficina mecanica",
-    "salao de beleza",
-    "clinica odontologica",
-    "farmacia"
-]
+import json
+ALVOS_PATH = os.path.join(ROOT_DIR, "config", "alvos.json")
+try:
+    with open(ALVOS_PATH, "r", encoding="utf-8") as f:
+        _alvos = json.load(f)
+        CIDADES = _alvos.get("cidades", [])
+        CATEGORIAS = _alvos.get("categorias", [])
+except Exception as e:
+    print(f"Erro ao ler config/alvos.json: {e}")
+    CIDADES = []
+    CATEGORIAS = []
 
 SERPER_ENDPOINT  = "https://google.serper.dev/places"
 SUPABASE_TABLE   = "leads_prospeccao"
