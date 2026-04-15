@@ -27,7 +27,6 @@ def limpar_leads_sem_telefone():
     print("\n" + "="*60)
     print("ETAPA: LIMPEZA DE LEADS (ANTI-LIXO)")
     print("Removendo leads sem telefone do banco de dados...")
-
     print("="*60 + "\n")
     
     url = f"{SUPABASE_URL}/rest/v1/leads_prospeccao"
@@ -56,18 +55,18 @@ def run_step(script_name, description):
     script_path = os.path.join("scripts", script_name)
     
     print("\n" + "="*60)
-    print(f"📦 ETAPA: {description.upper()}")
-    print(f"🚀 Iniciando {script_name}...")
+    print(f"ETAPA: {description.upper()}")
+    print(f"Iniciando {script_name}...")
     print("="*60 + "\n")
     
     try:
         result = subprocess.run([sys.executable, script_path], check=True)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ ERRO na etapa {description}: {e}")
+        print(f"\nERRO na etapa {description}: {e}")
         return False
     except FileNotFoundError:
-        print(f"\n❌ ERRO: O arquivo {script_path} nao foi encontrado.")
+        print(f"\nERRO: O arquivo {script_path} nao foi encontrado.")
         return False
 
 def main():
@@ -80,31 +79,28 @@ def main():
 
     print("Este script ira Cacar, Limpar, Gerar e Enviar leads sozinho.")
     print("Certifique-se de que o CELULAR esta conectado no Z-API.")
-
-    
     print("Iniciando o processo completo agora...")
-
 
     # --- ETAPA 1: SCANNER (GOOGLE MAPS) ---
     if not run_step("scanner_leads.py", "Busca de Novos Leads"):
-        print("\n⚠️  Falha no Scanner. Prosseguindo...")
+        print("\nFalha no Scanner. Prosseguindo...")
 
     # --- ETAPA 2: LIMPEZA (SUPABASE DELETE) ---
     # Adicionada para nao gastar Gemini/Z-API com quem nao tem fone
     limpar_leads_sem_telefone()
 
     # --- ETAPA 3: GERADOR (IA GEMINI) ---
-    if not run_step("gerador_propostas.py", "Geração de Propostas (IA Gemini)"):
-        print("\n⚠️  Falha no Gerador. Prosseguindo...")
+    if not run_step("gerador_propostas.py", "Geracao de Propostas (IA Gemini)"):
+        print("\nFalha no Gerador. Prosseguindo...")
 
     # --- ETAPA 4: DISPARADOR (Z-API) ---
     if not run_step("disparo_automatico.py", "Disparo de WhatsApp (Z-API Cloud)"):
-        print("\n❌ Falha critica no Disparador Automático.")
+        print("\nFalha critica no Disparador Automatico.")
         sys.exit(1)
 
     print("\n" + "="*60)
-    print("🏆 PROSPECÇÃO AUTOMATIZADA CONCLUÍDA COM SUCESSO!")
-    print("📊 Verifique seu Painel Administrativo para acompanhar os retornos.")
+    print("PROSPECCAO AUTOMATIZADA CONCLUIDA COM SUCESSO!")
+    print("Verifique seu Painel Administrativo para acompanhar os retornos.")
     print("="*60 + "\n")
 
 if __name__ == "__main__":
