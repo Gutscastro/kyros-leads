@@ -27,55 +27,76 @@ NICHOS_PADRAO = [
     "supermercado", "vidracaria"
 ]
 
-class CheckboxScrollFrame(ctk.CTkScrollableFrame):
+class SuperFastCheckboxFrame(ctk.CTkScrollableFrame):
+    """ Implementa virtualização leve para evitar congelamentos na re-renderização """
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
-        self.checkboxes = []
-        self.vars = {}
+        self.vars = {}           # item_name -> StringVar
+        self.all_items = []      # Todos os nomes de itens disponiveis
+        self.max_render = 150    # Renderiza no maximo 150 simultaneos na pesquisa para não travar o scroll
+        self.widget_pool = []    # Lista das caixinhas fisicas de UI
+
+        # Pre-cria widgets fisicos vazios pro pool
+        for i in range(self.max_render):
+            cb = ctk.CTkCheckBox(self, text="", onvalue="1", offvalue="0")
+            self.widget_pool.append(cb)
 
     def populate(self, list_items, pre_selected=[]):
-        self.clear()
+        self.all_items = list_items
         for item in list_items:
-            var = ctk.StringVar(value=item if item in pre_selected else "")
-            cb = ctk.CTkCheckBox(self, text=item, variable=var, onvalue=item, offvalue="")
-            cb.pack(anchor="w", pady=2, padx=5)
-            self.checkboxes.append(cb)
-            self.vars[item] = var
+            # Mantém apenas a variavel no ar, pra n perder estado se o cara pesquisar outra coisa
+            if item not in self.vars:
+                self.vars[item] = ctk.StringVar(value=item if item in pre_selected else "")
+        self.render_chunk(self.all_items)
 
     def filter_items(self, term):
         term = term.lower()
-        for cb in self.checkboxes:
-            if term in cb.cget("text").lower():
-                cb.pack(anchor="w", pady=2, padx=5)
-            else:
-                cb.pack_forget()
+        if term == "":
+            filtered = self.all_items
+        else:
+            filtered = [item for item in self.all_items if term in item.lower()]
+        self.render_chunk(filtered)
 
-    def clear(self):
-        for cb in self.checkboxes:
-            cb.destroy()
-        self.checkboxes.clear()
-        self.vars.clear()
+    def render_chunk(self, render_list):
+        # Trunca para nao lagar e renderiza rapidaço mudando apenas o TEXTO e a VARIAVEL da caixinha (sem criar/destruir)
+        chunk = render_list[:self.max_render]
+        
+        for i in range(self.max_render):
+            cb = self.widget_pool[i]
+            if i < len(chunk):
+                item_name = chunk[i]
+                cb.configure(
+                    text=item_name,
+                    variable=self.vars[item_name],
+                    onvalue=item_name,
+                    offvalue=""
+                )
+                if not cb.winfo_ismapped():
+                    cb.pack(anchor="w", pady=2, padx=5)
+            else:
+                if cb.winfo_ismapped():
+                    cb.pack_forget()
 
     def get_selected(self):
         return [var.get() for var in self.vars.values() if var.get() != ""]
 
     def select_all(self):
-        for cb, var in zip(self.checkboxes, self.vars.values()):
-            if cb.winfo_ismapped(): # Marca apenas as que estão visíveis na pesquisa
-                cb.select()
-                var.set(cb._onvalue)
+        # Marca todas que ESTÃO VISIVEIS NA TELA (pra funcionar com a pesquisa)
+        visiveis = [w.cget("text") for w in self.widget_pool if w.winfo_ismapped()]
+        for item in visiveis:
+            if item in self.vars:
+                self.vars[item].set(item)
 
     def deselect_all(self):
-        for cb, var in zip(self.checkboxes, self.vars.values()):
-            if cb.winfo_ismapped():
-                cb.deselect()
-                var.set(cb._offvalue)
+        visiveis = [w.cget("text") for w in self.widget_pool if w.winfo_ismapped()]
+        for item in visiveis:
+            if item in self.vars:
+                self.vars[item].set("")
 
 
 class KyrosApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-
         self.title("Kyros Leads — Central de Comando")
         self.geometry("1100x700")
 
@@ -128,11 +149,10 @@ class KyrosApp(ctk.CTk):
         self.config_frame = ctk.CTkFrame(self, corner_radius=10)
         self.config_frame.grid_columnconfigure(0, weight=1)
         self.config_frame.grid_columnconfigure(1, weight=1)
-        self.config_frame.grid_rowconfigure(3, weight=1) # Expande as listas
+        self.config_frame.grid_rowconfigure(3, weight=1) 
         
         ctk.CTkLabel(self.config_frame, text="Mapeamento Estratégico em Massa", font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, columnspan=2, pady=(15, 10))
 
-        # TOPO: Estado API
         top_frame = ctk.CTkFrame(self.config_frame, fg_color="transparent")
         top_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=5)
         
@@ -143,26 +163,26 @@ class KyrosApp(ctk.CTk):
         self.lbl_loading_cidades = ctk.CTkLabel(top_frame, text="", text_color="orange")
         self.lbl_loading_cidades.pack(side="left")
 
-        # BARRA DE PESQUISA (Novidade)
+        # BARRA DE PESQUISA SUPER OTIMIZADA
         search_frame = ctk.CTkFrame(self.config_frame, fg_color="transparent")
         search_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=20, pady=(10,0))
         search_frame.grid_columnconfigure(0, weight=1)
         search_frame.grid_columnconfigure(1, weight=1)
 
-        self.entry_pesquisa = ctk.CTkEntry(search_frame, placeholder_text="🔍 Escreva aqui para filtrar as cidades rapidamente...")
+        self.entry_pesquisa = ctk.CTkEntry(search_frame, placeholder_text="⌨️ Digite o nome da cidade aqui (Filtragem em Tempo Real)...")
         self.entry_pesquisa.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         self.entry_pesquisa.bind("<KeyRelease>", self.on_search_typing)
 
         ctk.CTkLabel(search_frame, text="🎯 Nichos do Scanner", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1)
 
-        # LISTAS DE ROLAGEM COM CHECKBOXES
-        self.scroll_cidades = CheckboxScrollFrame(self.config_frame)
+        # LISTAS (USANDO O NOVO SISTEMA SUPER FAST)
+        self.scroll_cidades = SuperFastCheckboxFrame(self.config_frame)
         self.scroll_cidades.grid(row=3, column=0, padx=10, pady=(5,10), sticky="nsew")
 
-        self.scroll_nichos = CheckboxScrollFrame(self.config_frame)
+        self.scroll_nichos = SuperFastCheckboxFrame(self.config_frame)
         self.scroll_nichos.grid(row=3, column=1, padx=10, pady=(5,10), sticky="nsew")
 
-        # BOTÕES DE SELEÇÃO EM MASSA
+        # BOTÕES MASSA
         btn_frame_cidad = ctk.CTkFrame(self.config_frame, fg_color="transparent")
         btn_frame_cidad.grid(row=4, column=0, pady=5)
         ctk.CTkButton(btn_frame_cidad, text="Marcar Listados", width=100, command=self.scroll_cidades.select_all).pack(side="left", padx=5)
@@ -173,7 +193,7 @@ class KyrosApp(ctk.CTk):
         ctk.CTkButton(btn_frame_nicho, text="Marcar Tudo", width=100, command=self.scroll_nichos.select_all).pack(side="left", padx=5)
         ctk.CTkButton(btn_frame_nicho, text="Desmarcar Tudo", width=100, fg_color="#631414", hover_color="#8a1c1c", command=self.scroll_nichos.deselect_all).pack(side="left", padx=5)
 
-        # BOTÃO SALVAR
+        # SALVAR
         self.btn_salvar_config = ctk.CTkButton(self.config_frame, text="✅ SALVAR TODOS OS ALVOS NO SISTEMA", font=ctk.CTkFont(weight="bold", size=14), fg_color="#0e6b26", hover_color="#148a32", height=40, command=self.salvar_alvos)
         self.btn_salvar_config.grid(row=5, column=0, columnspan=2, padx=20, pady=(15, 20), sticky="ew")
 
@@ -184,7 +204,6 @@ class KyrosApp(ctk.CTk):
         self.load_alvos_salvos()
         threading.Thread(target=self.init_ibge, daemon=True).start()
 
-    # --- NAVEGAÇÃO ---
     def show_console(self):
         self.config_frame.grid_forget()
         self.console_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
@@ -201,7 +220,6 @@ class KyrosApp(ctk.CTk):
         termo = self.entry_pesquisa.get()
         self.scroll_cidades.filter_items(termo)
 
-    # --- JSON E LOAD INICIAL ---
     def load_alvos_salvos(self):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -224,22 +242,18 @@ class KyrosApp(ctk.CTk):
         cids_na_tela = self.scroll_cidades.get_selected()
         nics = self.scroll_nichos.get_selected()
         
-        # Merge: Mantemos as cadastradas que já existiam mas não estão visíveis na tela (caso de outro estado),
-        # E adicionamos as novas. Mas para facilitar agora: O que tá selecionado daquele estado vai pro cache.
         final_cidades = list(set(self.alvos_cidades_cadastradas + cids_na_tela))
         
-        # Mas e se ele desmarcou? É complexo manter merge. Vamos apenas atualizar o banco com o atual pra simplificar, ou fazer append.
         data = {
-            "cidades": final_cidades[-100:], # limited pra n quebrar
+            "cidades": final_cidades[-100:],
             "categorias": nics
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
             
-        self.btn_salvar_config.configure(text="✅ ALVOS SALVOS COM SUCESSO!", fg_color="green")
+        self.btn_salvar_config.configure(text="✅ ALVOS VISÍVEIS FORAM SALVOS COM SUCESSO!", fg_color="green")
         self.after(2000, lambda: self.btn_salvar_config.configure(text="✅ SALVAR TODOS OS ALVOS NO SISTEMA", fg_color="#0e6b26"))
 
-    # --- API IBGE ---
     def init_ibge(self):
         try:
             self.combo_estado.configure(values=["Carregando..."])
@@ -252,11 +266,9 @@ class KyrosApp(ctk.CTk):
             self.estado_var.set(f"Erro IBGE")
 
     def carregar_cidades_thread(self, estado_selecionado):
-        self.lbl_loading_cidades.configure(text="⏳ Baixando dezenas de cidades, aguarde um segundo...")
-        self.scroll_cidades.clear()
-        self.update() # Força a tela a mostrar o Loading
-        # Chama com after para permitir UI atualizar o loading text
-        self.after(100, lambda: self.processar_cidades(estado_selecionado))
+        self.lbl_loading_cidades.configure(text="⏳ Baixando lista...")
+        self.update()
+        self.after(50, lambda: self.processar_cidades(estado_selecionado))
 
     def processar_cidades(self, estado_selecionado):
         uf_id = next((e["id"] for e in self.estados_api if e["nome"] == estado_selecionado), None)
@@ -270,7 +282,6 @@ class KyrosApp(ctk.CTk):
                 pass
         self.lbl_loading_cidades.configure(text="")
         
-    # --- EXECUÇÃO DE PYTHON ---
     def log(self, text):
         self.textbox.insert("end", text + "\n")
         self.textbox.see("end")
