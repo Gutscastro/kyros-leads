@@ -43,7 +43,7 @@ class SuperFastCheckboxFrame(ctk.CTkScrollableFrame):
         self.all_items = list_items
         for item in list_items:
             if item not in self.vars:
-                self.vars[item] = ctk.StringVar(value=item if item in pre_selected else "")
+                self.vars[item] = ctk.StringVar(value="1" if item in pre_selected else "0")
         self.render_chunk(self.all_items)
 
     def filter_items(self, term):
@@ -63,9 +63,7 @@ class SuperFastCheckboxFrame(ctk.CTkScrollableFrame):
                 item_name = chunk[i]
                 cb.configure(
                     text=item_name,
-                    variable=self.vars.get(item_name),
-                    onvalue=item_name,
-                    offvalue=""
+                    variable=self.vars.get(item_name)
                 )
                 if not cb.winfo_ismapped():
                     cb.pack(anchor="w", pady=2, padx=5)
@@ -74,20 +72,20 @@ class SuperFastCheckboxFrame(ctk.CTkScrollableFrame):
                     cb.pack_forget()
 
     def get_selected(self):
-        return [var.get() for var in self.vars.values() if var.get() != ""]
+        return [item_name for item_name, var in self.vars.items() if var.get() == "1"]
 
     def select_all(self):
         visiveis = [w.cget("text") for w in self.widget_pool if w.winfo_ismapped()]
         for item in visiveis:
             if item in self.vars:
                 # O widget atualiza visualmente se voce setar a stringvar atrelada a ele
-                self.vars[item].set(item)
+                self.vars[item].set("1")
 
     def deselect_all(self):
         visiveis = [w.cget("text") for w in self.widget_pool if w.winfo_ismapped()]
         for item in visiveis:
             if item in self.vars:
-                self.vars[item].set("")
+                self.vars[item].set("0")
 
 
 class KyrosApp(ctk.CTk):
