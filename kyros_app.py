@@ -291,7 +291,7 @@ class KyrosApp(ctk.CTk):
     def run_process(self, script_name):
         script_path = os.path.join("scripts", script_name)
         process = subprocess.Popen(
-            [sys.executable, script_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            [sys.executable, "-u", script_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, universal_newlines=True, cwd=os.getcwd()
         )
         for line in process.stdout:
