@@ -1,7 +1,7 @@
 """
 gerador_propostas.py
 --------------------
-ESTEIRA INFINITA: Processa todos os leads pendentes automaticamente em lotes.
+MODO TRATOR V2: Destravado e com monitoramento de busca.
 """
 
 import os
@@ -17,100 +17,84 @@ load_dotenv(os.path.join(ROOT_DIR, "config", ".env"))
 SUPABASE_URL   = (os.getenv("SUPABASE_URL") or "").strip()
 SUPABASE_KEY   = (os.getenv("SUPABASE_KEY") or "").strip()
 OPENROUTER_KEY = (os.getenv("OPENROUTER_API_KEY") or "").strip()
-IA_MODEL       = (os.getenv("IA_MODEL") or "google/gemma-3-4b-it:free").strip()
 
-supabase_headers = {
-    "apikey":        SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type":  "application/json",
-}
+MODELOS = [
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "google/gemma-3-4b-it:free",
+    "openrouter/free"
+]
 
-def chamar_ia_com_retry(prompt: str, max_tentativas=2) -> str | None:
+supabase_headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+
+def chamar_ia_persistente(prompt: str) -> str | None:
     url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_KEY}",
-        "Content-Type": "json", # Simplificado
-        "HTTP-Referer": "https://kyros-leads.app",
-        "X-Title": "KyrosBot"
-    }
-    payload = {
-        "model": IA_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
-    }
-
-    for tentativa in range(max_tentativas):
-        try:
-            # Headers corrigidos para Content-Type padrao
-            headers["Content-Type"] = "application/json"
-            response = requests.post(url, headers=headers, json=payload, timeout=45)
-            
-            if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content'].strip()
-            
-            if response.status_code == 429:
-                # Espera progressiva
-                waittime = 30 + (tentativa * 20)
-                print(f" (Limite! Pausando {waittime}s...)", end="", flush=True)
-                time.sleep(waittime)
+    headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json", "HTTP-Referer": "https://kyros-leads.app", "X-Title": "KyrosFinal"}
+    
+    while True:
+        for modelo in MODELOS:
+            payload = {
+                "model": modelo, 
+                "messages": [{"role": "system", "content": "Consultor amigavel. Apenas a mensagem final de 3 linhas."}, {"role": "user", "content": prompt}]
+            }
+            try:
+                res = requests.post(url, headers=headers, json=payload, timeout=30)
+                if res.status_code == 200:
+                    data = res.json()
+                    if 'choices' in data:
+                        return data['choices'][0]['message']['content'].strip()
+                if res.status_code == 429:
+                    print(".", end="", flush=True)
+                    time.sleep(4)
+                    continue
+            except:
+                time.sleep(3)
                 continue
-            else:
-                print(f" (Erro {response.status_code})", end="")
-        except Exception as e:
-            print(f" (Erro rede: {e})", end="")
-    return None
+        print(" (Fila cheia, aguardando 20s...)", end="", flush=True)
+        time.sleep(20)
 
-def executar_gerador():
-    print(f"ESTEIRA INFINITA KYROS -- IA: {IA_MODEL}")
-    print("Iniciando processamento automatico de toda a base pendente.")
+def executar():
+    print("ESTEIRA KYROS -- MODO TRATOR ATIVADO")
     print("-" * 60)
 
-    total_geral = 0
-
     while True:
-        # Busca o próximo lote de 10 leads
+        print("\n[BUSCA] Consultando novos leads...", end=" ", flush=True)
+        
         url = f"{SUPABASE_URL}/rest/v1/leads_prospeccao"
-        params = {"status": "eq.novo", "select": "id,nome_empresa,categoria,cidade,nota_google", "limit": 10}
+        # Lote de 5 para ser instantaneo
+        params = {"status": "eq.novo", "select": "id,nome_empresa,categoria,cidade,nota_google", "limit": 5}
         
         try:
-            res = requests.get(url, headers=supabase_headers, params=params)
+            res = requests.get(url, headers=supabase_headers, params=params, timeout=15)
+            if res.status_code != 200:
+                print(f"Erro DB {res.status_code}. Tentando em 10s...")
+                time.sleep(10)
+                continue
             leads = res.json()
-        except:
-            print("\nERROR: Falha ao conectar ao banco. Tentando em 10s...")
+        except Exception as e:
+            print(f"Erro conexao: {e}. Tentando em 10s...")
             time.sleep(10)
             continue
 
-        if not leads:
-            print("\n✅ TUDO CONCLUIDO! Nenhum lead pendente encontrado.")
+        if not leads: 
+            print("Nenhum lead pendente. ✅")
             break
 
-        print(f"\n--- Processando Lote de {len(leads)} leads ---")
-        
+        print(f"OK ({len(leads)} encontrados)")
+
         for lead in leads:
-            nome = lead.get('nome_empresa')
-            print(f" -> {nome}...", end=" ", flush=True)
+            print(f" -> {lead['nome_empresa']}...", end=" ", flush=True)
+            prompt = f"Ola, tudo bem? Notei que a {lead['nome_empresa']} em {lead['cidade']} tem otima nota no Google mas nao tem site. Posso explicar como isso ajuda? Seja humano e breve."
             
-            prompt = f"Crie uma abordagem curta de 3 linhas para a empresa {nome} ({lead.get('categoria')}) em {lead.get('cidade')}. Assine Equipe Kyros."
-            
-            proposta = chamar_ia_com_retry(prompt)
-            
+            proposta = chamar_ia_persistente(prompt)
             if proposta:
-                p_url = f"{SUPABASE_URL}/rest/v1/leads_prospeccao?id=eq.{lead['id']}"
-                requests.patch(p_url, json={"texto_proposta": proposta, "status": "gerado"}, headers=supabase_headers)
+                proposta = proposta.replace('"', '').strip()
+                requests.patch(f"{url}?id=eq.{lead['id']}", json={"texto_proposta": proposta, "status": "gerado"}, headers=supabase_headers)
                 print("OK")
-                total_geral += 1
+                time.sleep(4)
             else:
-                print("FALHA")
-            
-            time.sleep(4) # Pausa entre leads do mesmo lote
-
-        print(f"Lote finalizado. Total acumulado: {total_geral}")
-        print("Aguardando 8s para o proximo lote...")
-        time.sleep(8) 
-
-    print(f"\n" + "="*60)
-    print(f"PROCESSO FINALIZADO. {total_geral} propostas criadas no total.")
-    print("="*60)
+                print("ERRO")
+        
+        time.sleep(5)
 
 if __name__ == "__main__":
-    executar_gerador()
+    executar()
