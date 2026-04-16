@@ -1,47 +1,23 @@
 """
 gerador_propostas.py
 --------------------
-Cérebro do robô de prospecção: lê leads com status 'novo' no Supabase,
-gera uma mensagem personalizada de abordagem via Gemini (Google AI Studio)
-e atualiza o registro com a proposta e o novo status 'gerado'.
+ESTEIRA INFINITA: Processa todos os leads pendentes automaticamente em lotes.
 """
 
 import os
 import sys
 import time
 import requests
-import google.generativeai as genai
+import json
 from dotenv import load_dotenv
 
-# ── Carrega variáveis de ambiente ────────────────────────────────────────────
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(ROOT_DIR, "config", ".env"))
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-GEMINI_KEY   = os.getenv("GEMINI_API_KEY")
-
-# ── Validação ────────────────────────────────────────────────────────────────
-credenciais_faltando = [
-    nome for nome, val in [
-        ("SUPABASE_URL", SUPABASE_URL),
-        ("SUPABASE_KEY", SUPABASE_KEY),
-        ("GEMINI_API_KEY", GEMINI_KEY),
-    ] if not val or val == "sua_chave_aqui"
-]
-
-if credenciais_faltando:
-    print(f"❌ ERRO: Variáveis ausentes ou não preenchidas no config/.env:")
-    for c in credenciais_faltando:
-        print(f"   → {c}")
-    sys.exit(1)
-
-# Configuracao do Gemini - Usando o caminho completo do modelo 2.0
-genai.configure(api_key=GEMINI_KEY)
-modelo = genai.GenerativeModel("models/gemini-2.0-flash")
-
-# ── Headers do Supabase ───────────────────────────────────────────────────────
-TABELA = "leads_prospeccao"
+SUPABASE_URL   = (os.getenv("SUPABASE_URL") or "").strip()
+SUPABASE_KEY   = (os.getenv("SUPABASE_KEY") or "").strip()
+OPENROUTER_KEY = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+IA_MODEL       = (os.getenv("IA_MODEL") or "google/gemma-3-4b-it:free").strip()
 
 supabase_headers = {
     "apikey":        SUPABASE_KEY,
@@ -49,168 +25,92 @@ supabase_headers = {
     "Content-Type":  "application/json",
 }
 
-DELAY_ENTRE_LEADS = 2  # segundos — respeita o rate limit do Gemini (free tier)
-
-
-# ── Funções auxiliares ────────────────────────────────────────────────────────
-
-def buscar_leads_novos() -> list[dict]:
-    """
-    Busca no Supabase todos os leads com status = 'novo'.
-    Retorna uma lista de dicionários com os dados do lead.
-    """
-    url = f"{SUPABASE_URL}/rest/v1/{TABELA}"
-    params = {
-        "status": "eq.novo",
-        "select": "id,nome_empresa,categoria,cidade,nota_google",
+def chamar_ia_com_retry(prompt: str, max_tentativas=2) -> str | None:
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Content-Type": "json", # Simplificado
+        "HTTP-Referer": "https://kyros-leads.app",
+        "X-Title": "KyrosBot"
     }
-
-    try:
-        response = requests.get(url, headers=supabase_headers, params=params, timeout=10)
-        response.raise_for_status()
-        leads = response.json()
-        print(f"📋 {len(leads)} lead(s) com status 'novo' encontrado(s).\n")
-        return leads
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Erro ao buscar leads no Supabase: {e}")
-        sys.exit(1)
-
-
-def montar_prompt(lead: dict) -> str:
-    """
-    Monta o prompt personalizado para o Gemini com base nos dados do lead.
-    """
-    nome     = lead.get("nome_empresa", "a empresa")
-    categoria = lead.get("categoria", "estabelecimento")
-    cidade   = lead.get("cidade", "sua cidade")
-    nota     = lead.get("nota_google")
-
-    nota_texto = f"nota {nota} no Google" if nota else "boa avaliação no Google"
-
-    return (
-        f"Aja como um consultor de tecnologia de Três Corações, Minas Gerais. "
-        f"Escreva uma mensagem de abordagem para o WhatsApp do dono da {nome}, "
-        f"que é uma {categoria} em {cidade}. "
-        f"Foque no fato de que eles têm {nota_texto}, mas não têm site, "
-        f"e estão perdendo clientes para a concorrência que já está no digital. "
-        f"A mensagem deve ser curta (máximo 5 linhas), profissional e mineira "
-        f"(educada mas direta ao ponto, sem rodeios). "
-        f"Não use asteriscos nem emojis excessivos. Assine como 'Equipe Kyros Digital'."
-    )
-
-
-def gerar_proposta_com_gemini(prompt: str) -> str | None:
-    """
-    Envia o prompt ao Gemini e retorna o texto gerado.
-    Retorna None em caso de falha.
-    """
-    try:
-        resposta = modelo.generate_content(prompt)
-        return resposta.text.strip()
-    except Exception as e:
-        print(f"  ⚠️  Erro ao chamar o Gemini: {e}")
-        return None
-
-
-def atualizar_lead_no_supabase(lead_id: str, texto_proposta: str) -> bool:
-    """
-    Atualiza o lead no Supabase com a proposta gerada e status 'gerado'.
-    Retorna True se bem-sucedido.
-    """
-    url = f"{SUPABASE_URL}/rest/v1/{TABELA}"
-    params = {"id": f"eq.{lead_id}"}
     payload = {
-        "texto_proposta": texto_proposta,
-        "status":         "gerado",
+        "model": IA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
     }
 
-    try:
-        response = requests.patch(
-            url, json=payload, headers=supabase_headers, params=params, timeout=10
-        )
-        response.raise_for_status()
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  ⚠️  Erro ao atualizar lead {lead_id}: {e}")
-        return False
-
-
-# ── Loop principal ────────────────────────────────────────────────────────────
+    for tentativa in range(max_tentativas):
+        try:
+            # Headers corrigidos para Content-Type padrao
+            headers["Content-Type"] = "application/json"
+            response = requests.post(url, headers=headers, json=payload, timeout=45)
+            
+            if response.status_code == 200:
+                return response.json()['choices'][0]['message']['content'].strip()
+            
+            if response.status_code == 429:
+                # Espera progressiva
+                waittime = 30 + (tentativa * 20)
+                print(f" (Limite! Pausando {waittime}s...)", end="", flush=True)
+                time.sleep(waittime)
+                continue
+            else:
+                print(f" (Erro {response.status_code})", end="")
+        except Exception as e:
+            print(f" (Erro rede: {e})", end="")
+    return None
 
 def executar_gerador():
-    """
-    Orquestra a leitura dos leads, geração das propostas e atualização no banco.
-    """
-    print("CADERNO DE PROPOSTAS -- Iniciando com Gemini AI...")
-    print("="*60)
+    print(f"ESTEIRA INFINITA KYROS -- IA: {IA_MODEL}")
+    print("Iniciando processamento automatico de toda a base pendente.")
+    print("-" * 60)
 
-    print()
+    total_geral = 0
 
-    leads = buscar_leads_novos()
-
-    if not leads:
-
-        return
-
-    total_gerados  = 0
-    total_erros    = 0
-
-    for lead in leads:
-        nome     = lead.get("nome_empresa", "Empresa desconhecida")
-        lead_id  = lead.get("id")
-
-    print("Processando: ", nome)
-
-
-        # Gera o prompt e chama o Gemini
-        prompt   = montar_prompt(lead)
-        proposta = None
+    while True:
+        # Busca o próximo lote de 10 leads
+        url = f"{SUPABASE_URL}/rest/v1/leads_prospeccao"
+        params = {"status": "eq.novo", "select": "id,nome_empresa,categoria,cidade,nota_google", "limit": 10}
         
-        while proposta is None:
-            try:
-                proposta = gerar_proposta_com_gemini(prompt)
-                if not proposta:
-                    print(f"  ❌ Falha generica ao gerar proposta para: {nome}")
-                    total_erros += 1
-                    break
-            except Exception as e:
-                # Se for erro de quota (429)
-                print(f"Limites atingidos. Aguardando 15 segundos...")
+        try:
+            res = requests.get(url, headers=supabase_headers, params=params)
+            leads = res.json()
+        except:
+            print("\nERROR: Falha ao conectar ao banco. Tentando em 10s...")
+            time.sleep(10)
+            continue
 
-                    time.sleep(15)
-                    continue # Tenta gerar o mesmo lead de novo
-                else:
-                    print(f"  ❌ Erro ao processar: {e}")
-                    total_erros += 1
-                    break
+        if not leads:
+            print("\n✅ TUDO CONCLUIDO! Nenhum lead pendente encontrado.")
+            break
 
-        if proposta:
-            # Persiste a proposta e atualiza o status
-            sucesso = atualizar_lead_no_supabase(lead_id, proposta)
-
-            if sucesso:
-                print(f"  ✅ [PROPOSTA OK] Gerada para: {nome}")
-                total_gerados += 1
+        print(f"\n--- Processando Lote de {len(leads)} leads ---")
+        
+        for lead in leads:
+            nome = lead.get('nome_empresa')
+            print(f" -> {nome}...", end=" ", flush=True)
+            
+            prompt = f"Crie uma abordagem curta de 3 linhas para a empresa {nome} ({lead.get('categoria')}) em {lead.get('cidade')}. Assine Equipe Kyros."
+            
+            proposta = chamar_ia_com_retry(prompt)
+            
+            if proposta:
+                p_url = f"{SUPABASE_URL}/rest/v1/leads_prospeccao?id=eq.{lead['id']}"
+                requests.patch(p_url, json={"texto_proposta": proposta, "status": "gerado"}, headers=supabase_headers)
+                print("OK")
+                total_geral += 1
             else:
-                print(f"  ❌ Falha ao salvar proposta de: {nome}")
-                total_erros += 1
+                print("FALHA")
+            
+            time.sleep(4) # Pausa entre leads do mesmo lote
 
-        # Pausa fixa de 15 segundos entre chamadas para garantir paz total na quota do Gemini
-        time.sleep(15)
+        print(f"Lote finalizado. Total acumulado: {total_geral}")
+        print("Aguardando 8s para o proximo lote...")
+        time.sleep(8) 
 
-
-
-
-    # ── Relatório final ───────────────────────────────────────────────────────
-    print()
-    print("=" * 60)
-    print("📊 RELATÓRIO FINAL")
-    print("=" * 60)
-    print(f"  ✅ Propostas geradas com sucesso : {total_gerados}")
-    print(f"  ❌ Erros                         : {total_erros}")
-    print("=" * 60)
-    print("✅ Processo concluído!")
-
+    print(f"\n" + "="*60)
+    print(f"PROCESSO FINALIZADO. {total_geral} propostas criadas no total.")
+    print("="*60)
 
 if __name__ == "__main__":
     executar_gerador()

@@ -9,99 +9,74 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(ROOT_DIR, "config", ".env"))
 
 def check_env():
-    print("\n📦 1. VERIFICANDO VARIÁVEIS DE AMBIENTE (.env)")
-    vars_to_check = ["SUPABASE_URL", "SUPABASE_KEY", "SERPER_API_KEY", "GEMINI_API_KEY"]
+    print("\n[STEP 1] VERIFICANDO VARIAVEIS DE AMBIENTE (.env)")
+    vars_to_check = ["SUPABASE_URL", "SUPABASE_KEY", "SERPER_API_KEY", "OPENROUTER_API_KEY"]
     all_ok = True
     for v in vars_to_check:
         val = (os.getenv(v) or "").strip()
         if not val or val == "sua_chave_aqui":
-            print(f"   ❌ {v}: AUSENTE ou com valor padrão ('sua_chave_aqui')")
+            print(f"   X {v}: AUSENTE ou com valor padrao")
             all_ok = False
         else:
-            print(f"   ✅ {v}: Preenchida")
+            print(f"   OK: {v}")
     return all_ok
 
 def check_supabase():
-    print("\n⚡ 2. TESTANDO CONEXÃO SUPABASE (Tabela leads_prospeccao)")
+    print("\n[STEP 2] TESTANDO CONEXAO SUPABASE")
     url = (os.getenv("SUPABASE_URL") or "").strip()
     key = (os.getenv("SUPABASE_KEY") or "").strip()
-    
     if not url or not key: return False
-    
     endpoint = f"{url}/rest/v1/leads_prospeccao?select=id&limit=1"
     headers = {"apikey": key, "Authorization": f"Bearer {key}"}
-    
     try:
         response = requests.get(endpoint, headers=headers, timeout=5)
         if response.status_code == 200:
-            print("   ✅ Conexão bem-sucedida! Tabela acessível.")
+            print("   OK: Conexao bem-sucedida!")
             return True
         else:
-            print(f"   ❌ Erro ao acessar: {response.status_code} - {response.text}")
+            print(f"   X Erro ao acessar: {response.status_code}")
             return False
     except Exception as e:
-        print(f"   ❌ Erro de rede/DNS: {e}")
+        print(f"   X Erro de rede: {e}")
         return False
 
-def check_serper():
-    print("\n🔎 3. TESTANDO API SERPER (Google Search)")
-    key = (os.getenv("SERPER_API_KEY") or "").strip()
-    if not key: return False
-    
-    url = "https://google.serper.dev/places"
-    payload = {"q": "Cafeteria em São Paulo", "num": 1}
-    headers = {"X-API-KEY": key, "Content-Type": "application/json"}
-    
+def check_openrouter():
+    print("\n[STEP 3] TESTANDO API OPENROUTER")
+    key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if not key or "sk-or" not in key:
+        print("   X Chave OpenRouter nao configurada corretamente.")
+        return False
+    # Teste de saldo / modelos
+    url = "https://openrouter.ai/api/v1/auth/key"
+    headers = {"Authorization": f"Bearer {key}"}
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
-            print("   ✅ API Serper autorizada e funcionando.")
+            print("   OK: Chave OpenRouter validada!")
             return True
         else:
-            print(f"   ❌ Erro Serper: {response.status_code} - {response.text}")
+            print(f"   X Chave invalida ou sem acesso: {response.status_code}")
             return False
     except Exception as e:
-        print(f"   ❌ Erro de rede Serper: {e}")
-        return False
-
-def check_gemini():
-    print("\n🧠 4. TESTANDO API GEMINI (IA Studio)")
-    key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not key or key == "sua_chave_aqui": return False
-    
-    try:
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        # Teste ultra-curto apenas para validar a chave
-        response = model.generate_content("Responda apenas 'OK'", 
-                                         generation_config=genai.types.GenerationConfig(max_output_tokens=5))
-        if "OK" in response.text:
-            print("   ✅ API Gemini conectada e respondendo.")
-            return True
-        else:
-            print("   ⚠️ Gemini respondeu, mas não o esperado.")
-            return True
-    except Exception as e:
-        print(f"   ❌ Erro Gemini: {e}")
+        print(f"   X Erro OpenRouter: {e}")
         return False
 
 def main():
     print("="*60)
-    print("      DIAGNÓSTICO COMPLETO - KYROS LEADS PIPELINE")
+    print("      DIAGNOSTICO COMPLETO - KYROS LEADS PIPELINE")
     print("="*60)
     
-    env_ok = check_env()
-    supa_ok = check_supabase()
-    serp_ok = check_serper()
-    gem_ok = check_gemini()
+    e_ok = check_env()
+    s_ok = check_supabase()
+    o_ok = check_openrouter()
     
     print("\n" + "="*60)
-    print("📊 RESULTADO DO TESTE DE INTEGRAÇÃO")
+    print("RESULTADO FINAL")
     print("="*60)
-    if env_ok and supa_ok and serp_ok and gem_ok:
-        print("🚀 TUDO PRONTO! O fluxo completo pode ser iniciado com pipeline.py")
+    if e_ok and s_ok and o_ok:
+        print("TUDO PRONTO! O sistema pode ser operado normalmente.")
     else:
-        print("⚠️  ATENÇÃO: Corrija os erros marcados com ❌ acima antes de rodar.")
+        print("ATENCAO: Corrija os erros marcados acima.")
     print("="*60 + "\n")
 
 if __name__ == "__main__":
